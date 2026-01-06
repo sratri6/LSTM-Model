@@ -1,0 +1,141 @@
+import pandas as pd
+
+# The 'FileNotFoundError' occurs because Colab cannot directly access local paths like '/Users/sukanyapal/Desktop/dataset.csv'.
+# You need to upload your file to the Colab environment or mount Google Drive.
+
+# Option 1: Upload the file directly to Colab (e.g., via the file icon on the left sidebar or code below).
+# After running the cell below and selecting your file, its name will be available in the Colab environment.
+from google.colab import files
+#uploaded = files.upload()
+
+# Assuming 'dataset.csv' is uploaded and its name is 'dataset.csv':
+file_name = 'dataset.csv'
+
+# Option 2: Mount Google Drive if your file is there.
+# from google.colab import drive
+# drive.mount('/content/drive')
+# # Then, use the path like: '/content/drive/MyDrive/path/to/your/dataset.csv'
+
+# Please update the path below after you've made your file accessible in Colab.
+# For example, if you uploaded 'dataset.csv', you might just use 'dataset.csv'
+# data = pd.read_csv("/Users/sukanyapal/Desktop/dataset.csv") # Original problematic line, commented out.
+
+# Placeholder for corrected path after file upload or drive mount
+data = pd.read_csv(file_name) # <-- Using the file_name variable after upload
+
+print(data.head())
+data
+
+import numpy as np
+
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
+
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout
+
+
+# 1. Inspect 'Signal Quality' unique values
+print("Unique values in 'Signal Quality':", data['Signal Quality'].unique())
+
+from sklearn.preprocessing import LabelEncoder, MinMaxScaler
+from tensorflow.keras.utils import to_categorical
+
+# Define features and target
+features_columns = ['SNR Receiver', 'SNR Stages', 'BER Receiver', 'Modulation Depth']
+target_column = 'Signal Quality'
+
+# Extract features (X) and target (y)
+X = data[features_columns].values
+y = data[target_column].values
+
+# Encode the target variable
+label_encoder = LabelEncoder()
+y_encoded = label_encoder.fit_transform(y)
+num_classes = len(label_encoder.classes_)
+y_one_hot = to_categorical(y_encoded, num_classes=num_classes)
+
+print(f"Original target classes: {label_encoder.classes_}")
+print(f"Encoded target shape (one-hot): {y_one_hot.shape}")
+
+# Scale the features
+scaler = MinMaxScaler(feature_range=(0, 1))
+X_scaled = scaler.fit_transform(X)
+
+print(f"Scaled features shape: {X_scaled.shape}")
+
+# 3. Create sequences for LSTM
+# Function to create sequences (X_train, y_train) for time series prediction
+def create_sequences(X, y, look_back=1):
+    X_seq, y_seq = [], []
+    for i in range(len(X) - look_back):
+        X_seq.append(X[i:(i + look_back), :])
+        y_seq.append(y[i + look_back])
+    return np.array(X_seq), np.array(y_seq)
+
+# Define the look_back period (number of previous time steps to use as input)
+look_back = 5 # You can adjust this value based on your data's temporal dependencies
+
+X_sequences, y_sequences = create_sequences(X_scaled, y_one_hot, look_back)
+
+print(f"X_sequences shape: {X_sequences.shape}") # (samples, look_back, features)
+print(f"y_sequences shape: {y_sequences.shape}") # (samples, num_classes)
+
+# 4. Split data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X_sequences, y_sequences, test_size=0.2, random_state=42, shuffle=False)
+
+print(f"X_train shape: {X_train.shape}")
+print(f"y_train shape: {y_train.shape}")
+print(f"X_test shape: {X_test.shape}")
+print(f"y_test shape: {y_test.shape}")
+
+# 5. Build and compile the LSTM model
+model = Sequential()
+model.add(LSTM(units=50, return_sequences=True, input_shape=(look_back, X_scaled.shape[1])))
+model.add(Dropout(0.2))
+model.add(LSTM(units=50))
+model.add(Dropout(0.2))
+model.add(Dense(units=num_classes, activation='softmax')) # Output layer for multi-class classification
+
+model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+
+model.summary()
+
+# 6. Train the LSTM model
+history = model.fit(
+    X_train, y_train,
+    epochs=50,  # Number of training iterations
+    batch_size=32, # Number of samples per gradient update
+    validation_split=0.2, # Use 20% of training data for validation
+    verbose=1 # Show training progress
+)
+
+# 7. Evaluate the model
+loss, accuracy = model.evaluate(X_test, y_test, verbose=0)
+print(f"Test Loss: {loss:.4f}")
+print(f"Test Accuracy: {accuracy:.4f}")
+
+import matplotlib.pyplot as plt
+
+# Plot training & validation accuracy values
+plt.figure(figsize=(12, 6))
+plt.subplot(1, 2, 1)
+plt.plot(history.history['accuracy'])
+plt.plot(history.history['val_accuracy'])
+plt.title('Model accuracy')
+plt.ylabel('Accuracy')
+plt.xlabel('Epoch')
+plt.legend(['Train', 'Validation'], loc='upper left')
+
+# Plot training & validation loss values
+plt.subplot(1, 2, 2)
+plt.plot(history.history['loss'])
+plt.plot(history.history['val_loss'])
+plt.title('Model loss')
+plt.ylabel('Loss')
+plt.xlabel('Epoch')
+plt.legend(['Train', 'Validation'], loc='upper left')
+plt.tight_layout()
+plt.show()
